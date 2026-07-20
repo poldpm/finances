@@ -100,11 +100,18 @@ h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
 .tx:active{transform:scale(.985)}
 .tx .ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:18px;flex:none;background:var(--brand-soft)}
 .tx .mid{flex:1;min-width:0;display:block}
-.tx .t1{display:block;font-weight:620;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* el títol s'escurça, però les etiquetes no es tallen mai */
+.tx .t1{display:flex;align-items:center;font-weight:620;font-size:15px;min-width:0}
+.tx .t1 .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tx .t1 .tag{flex:none}
 .tx .t2{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .tx .amt{font-weight:750;font-size:15.5px;flex:none;letter-spacing:-.01em}
 .tx .amt.in{color:var(--in)}
 .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:5px;background:var(--warn-soft);color:var(--warn);margin-left:5px;vertical-align:1px}
+.tag.neutre{background:var(--bg);color:var(--muted)}
+/* traspàs entre comptes propis: es veu, però atenuat i sense color d'import */
+.tx.off .ic,.tx.off .t1,.tx.off .t2{opacity:.6}
+.tx.off .amt{opacity:.55;font-weight:600;color:var(--muted) !important}
 .empty{text-align:center;padding:40px 20px;color:var(--muted)}
 .empty .e{font-size:40px;display:block;margin-bottom:10px;opacity:.5}
 .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
@@ -312,10 +319,14 @@ const CATS_DEF = [
   {id:'c_viat', n:'Viatges',       e:'✈️', k:'d', col:'#00A3C4'},
   {id:'c_subs', n:'Subscripcions', e:'🔁', k:'d', col:'#7A6FF0'},
   {id:'c_altd', n:'Altres',        e:'❔', k:'d', col:'#8B9B97'},
+  // excl:true → surt a la llista però NO compta al balanç ni a les estadístiques.
+  // És per moure diners entre comptes teus: no és despesa, només canvia de lloc.
+  {id:'c_trasp',n:'Traspàs / estalvi', e:'🔄', k:'d', col:'#6B7B77', excl:true},
   {id:'i_nom',  n:'Nòmina',        e:'💼', k:'i', col:'#1F9D6B'},
   {id:'i_extra',n:'Ingrés extra',  e:'💰', k:'i', col:'#3E9E6B'},
   {id:'i_dev',  n:'Devolució',     e:'↩️', k:'i', col:'#2AA198'},
   {id:'i_alti', n:'Altres',        e:'❔', k:'i', col:'#8B9B97'},
+  {id:'i_trasp',n:'Traspàs / retorn', e:'🔄', k:'i', col:'#6B7B77', excl:true},
 ];
 const METHODS = [
   {id:'targeta',  n:'Targeta',     e:'💳'},
@@ -343,6 +354,9 @@ function normalize(s){
   s = s && typeof s==='object' ? s : {};
   if(!Array.isArray(s.tx)) s.tx = [];
   if(!Array.isArray(s.cats) || !s.cats.length) s.cats = CATS_DEF.map(c=>({...c}));
+  s.cats = s.cats.map(c=>({...c, excl:!!c.excl}));
+  // les categories noves s'afegeixen als usuaris que ja tenien dades desades
+  CATS_DEF.forEach(d=>{ if(!s.cats.some(c=>c.id===d.id)) s.cats.push({...d}); });
   if(!Array.isArray(s.recur)) s.recur = [];
   if(!s.budgets || typeof s.budgets!=='object') s.budgets = {};
   if(!s.settings || typeof s.settings!=='object') s.settings = {};
@@ -370,9 +384,15 @@ const catOf = id => STATE.cats.find(c=>c.id===id) || {id:'?',n:'Sense categoria'
 const methOf = id => METHODS.find(m=>m.id===id) || METHODS[0];
 const ymOf = t => t.date.slice(0,7);
 const txOfMonth = ym => STATE.tx.filter(t=>ymOf(t)===ym);
+/** Un traspàs entre comptes teus no és ni despesa ni ingrés: no compta. */
+const compta = t => !catOf(t.cat).excl;
+
 function sums(list){
   let i=0,d=0;
-  for(const t of list){ if(t.type==='i') i+=t.amount; else d+=t.amount; }
+  for(const t of list){
+    if(!compta(t)) continue;
+    if(t.type==='i') i+=t.amount; else d+=t.amount;
+  }
   return {in:i, out:d, bal:i-d};
 }
 function monthsWithData(){
@@ -712,9 +732,12 @@ function txRow(t){
   const title = t.desc || c.n;
   const dup = t.desc && t.desc.toLowerCase()===c.n.toLowerCase();
   const sub = (t.desc && !dup ? c.n+' · ' : '') + m.e+' '+m.n + (t.src==='banc' ? ' · 🏦 banc' : '');
-  return '<button class="tx" data-tx="'+esc(t.id)+'">'
+  const off = !compta(t);
+  return '<button class="tx'+(off?' off':'')+'" data-tx="'+esc(t.id)+'">'
     +  '<span class="ic" style="background:'+esc(c.col)+'22">'+c.e+'</span>'
-    +  '<span class="mid"><span class="t1">'+esc(title)+(t.pend?'<span class="tag">pendent</span>':'')+'</span>'
+    +  '<span class="mid"><span class="t1"><span class="tt">'+esc(title)+'</span>'
+    +  (t.pend?'<span class="tag">pendent</span>':'')
+    +  (off?'<span class="tag neutre">no compta</span>':'')+'</span>'
     +  '<span class="t2">'+esc(sub)+'</span></span>'
     +  '<span class="amt num '+(t.type==='i'?'in':'')+'">'+(t.type==='i'?'+':'−')+esc(eur(t.amount))+'</span>'
     + '</button>';
@@ -788,7 +811,7 @@ function statRow(k,v,col){
 /* ---------- 3.3 Estadístiques ---------- */
 function viewEstad(){
   const list = txOfMonth(MONTH);
-  const desp = list.filter(t=>t.type==='d');
+  const desp = list.filter(t=>t.type==='d' && compta(t));   // els traspassos no hi pinten res
   let h = '';
   h += '<div class="mnav">'
      +   '<button data-mv="-1">‹</button><div class="cur">'+esc(ymLabel(MONTH))+'</div>'
@@ -1120,6 +1143,13 @@ function sheetCatEdit(cat, kind){
      + COLORS.map(c=>'<button class="chip'+(c===CDRAFT.col?' on':'')+'" data-col="'+c+'" '
        + 'style="width:38px;height:38px;padding:0;background:'+c+';border-color:'+(c===CDRAFT.col?'var(--ink)':'transparent')+'"></button>').join('')
      + '</div>';
+  h += '<div class="cfg-row" style="margin-top:16px;border-top:1px solid var(--line)">'
+     + '<span class="cn">No comptar al balanç'
+     + '<span style="display:block;font-weight:500;font-size:12.5px;color:var(--muted)">'
+     + 'Per moure diners entre comptes teus: es veurà a la llista, però no com a despesa ni ingrés.'
+     + '</span></span>'
+     + '<button class="switch'+(CDRAFT.excl?' on':'')+'" id="cExcl"><i></i></button></div>';
+
   h += '<button class="btn" id="cSave">Desar</button>';
   if(!nou){
     h += '<button class="btn danger" id="cDel">Esborrar la categoria</button>'
@@ -1356,6 +1386,11 @@ document.addEventListener('click', e=>{
       x.style.borderColor = on ? 'var(--ink)' : 'transparent';
       x.style.background = x.dataset.col;
     });
+    return;
+  }
+  if(e.target.closest('#cExcl')){
+    CDRAFT.excl = !CDRAFT.excl;
+    e.target.closest('#cExcl').classList.toggle('on', CDRAFT.excl);
     return;
   }
   if(e.target.closest('#cSave')){
