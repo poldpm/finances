@@ -124,7 +124,8 @@ h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
   border-top:1px solid var(--line);padding-bottom:var(--safe-b);
 }
 .nav-in{display:flex;max-width:640px;margin:0 auto;height:62px;align-items:center}
-.nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:650;color:var(--muted);padding-top:2px}
+.nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;font-weight:650;color:var(--muted);padding-top:2px;min-width:0}
+@media(min-width:400px){.nav button{font-size:10.5px}}
 .nav button i{font-style:normal;font-size:20px;line-height:1}
 .nav button.on{color:var(--brand)}
 .fab{
@@ -283,6 +284,7 @@ textarea.fld{resize:vertical;min-height:60px}
     <button data-v="home" class="on"><i>🏠</i>Aquest mes</button>
     <button data-v="mesos"><i>📅</i>Mesos</button>
     <button data-v="estad"><i>📊</i>Estadístiques</button>
+    <button data-v="patri"><i>💎</i>Patrimoni</button>
   </div>
 </nav>
 
@@ -354,8 +356,20 @@ function p2(n){ return String(n).padStart(2,'0'); }
 function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate()); }
 function uid(pre){ return (pre||'x')+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
+/* Tipus d'actiu del patrimoni. `auto` = el valor l'omple el banc, no tu. */
+const TIPUS = [
+  {id:'banc',    n:'Compte del banc', e:'🏦', col:'#0F5D4E'},
+  {id:'estalvi', n:'Estalvis',        e:'🐖', col:'#3E9E6B'},
+  {id:'borsa',   n:'Accions i fons',  e:'📈', col:'#3B82C4'},
+  {id:'cripto',  n:'Criptomonedes',   e:'₿',  col:'#E08A2E'},
+  {id:'efectiu', n:'Efectiu',         e:'💵', col:'#8B9B97'},
+  {id:'altres',  n:'Altres béns',     e:'📦', col:'#9B5DE5'},
+];
+const tipusOf = id => TIPUS.find(t=>t.id===id) || TIPUS[5];
+
 function emptyState(){
-  return { tx:[], cats:CATS_DEF.map(c=>({...c})), recur:[], budgets:{}, settings:{cur:'€', goal:0}, bank:{} };
+  return { tx:[], cats:CATS_DEF.map(c=>({...c})), recur:[], actius:[],
+           budgets:{}, settings:{cur:'€', goal:0}, bank:{} };
 }
 function normalize(s){
   s = s && typeof s==='object' ? s : {};
@@ -376,6 +390,15 @@ function normalize(s){
     src:t.src||'manual', bankId:t.bankId||'', pend:!!t.pend, note:t.note||'',
     ok:!!t.ok,                       // revisat per l'usuari (els manuals neixen revisats)
     createdAt:t.createdAt||0
+  }));
+  if(!Array.isArray(s.actius)) s.actius = [];
+  s.actius = s.actius.filter(a=>a && a.id).map(a=>({
+    id:a.id, nom:a.nom||'Sense nom', tipus:a.tipus||'altres',
+    auto:!!a.auto,                      // el valor l'escriu el banc, no l'usuari
+    // hist: una entrada per data. L'última és el valor d'ara.
+    hist:(Array.isArray(a.hist)?a.hist:[]).filter(h=>h && h.d)
+          .map(h=>({d:String(h.d).slice(0,10), v:+h.v||0}))
+          .sort((x,y)=>x.d.localeCompare(y.d))
   }));
   s.recur = s.recur.filter(r=>r && r.id).map(r=>({
     id:r.id, type:(r.type==='i'?'i':'d'), amount:Math.abs(+r.amount||0),
@@ -433,6 +456,51 @@ function shiftYm(ym, k){
   m += k;
   while(m<1){ m+=12; y--; } while(m>12){ m-=12; y++; }
   return y+'-'+p2(m);
+}
+
+/* ---- patrimoni ---- */
+
+/** Valor d'un actiu en una data: l'última anotació feta fins aquell dia. */
+function valorEn(a, iso){
+  let v = null;
+  for(const h of a.hist){ if(h.d <= iso) v = h.v; else break; }
+  return v;
+}
+/** Valor d'ara mateix. */
+const valorAra = a => a.hist.length ? a.hist[a.hist.length-1].v : 0;
+const dataAra  = a => a.hist.length ? a.hist[a.hist.length-1].d : '';
+
+/** Total del patrimoni en una data. Els actius que encara no existien no hi sumen. */
+function patrimoniEn(iso){
+  let t = 0;
+  for(const a of STATE.actius){ const v = valorEn(a, iso); if(v!=null) t += v; }
+  return t;
+}
+const patrimoniAra = () => STATE.actius.reduce((s,a)=>s+valorAra(a), 0);
+
+/** Últim dia del mes d'un 'YYYY-MM' (o avui, si és el mes en curs). */
+function finalDeMes(ym){
+  const avui = todayISO();
+  const [y,m] = ym.split('-').map(Number);
+  const fi = y+'-'+p2(m)+'-'+p2(new Date(y, m, 0).getDate());
+  return fi > avui ? avui : fi;
+}
+
+/** Sèrie mensual del patrimoni per al gràfic. */
+function seriePatrimoni(mesos){
+  const out = [];
+  let ym = ymNow();
+  for(let i=0;i<mesos;i++){ out.unshift(ym); ym = shiftYm(ym,-1); }
+  // ⚠️ ha de ser ym:m — amb la forma curta {ym} agafaria la variable de fora
+  return out.map(m=>({ym:m, total:patrimoniEn(finalDeMes(m))}));
+}
+
+/** Anota un valor nou. Si ja n'hi ha un d'avui, el substitueix. */
+function anotaValor(a, v){
+  const d = todayISO();
+  const i = a.hist.findIndex(h=>h.d===d);
+  if(i>=0) a.hist[i].v = v; else a.hist.push({d, v});
+  a.hist.sort((x,y)=>x.d.localeCompare(y.d));
 }
 
 /* =====================================================================
@@ -533,6 +601,8 @@ const api = {
   catDelete(id){ persist('catDelete', {id}); },
   recUpsert(r){ persist('recUpsert', r); },
   recDelete(id){ persist('recDelete', {id}); },
+  actiuUpsert(a){ persist('actiuUpsert', a); },
+  actiuDelete(id){ persist('actiuDelete', {id}); },
   setBudget(catId, v){ persist('setBudget', {catId, v}); },
   setSettings(o){ persist('setSettings', o); },
 };
@@ -631,9 +701,12 @@ function render(){
   if(VIEW==='home')  el.innerHTML = viewHome();
   if(VIEW==='mesos') el.innerHTML = viewMesos();
   if(VIEW==='estad') el.innerHTML = viewEstad();
+  if(VIEW==='patri') el.innerHTML = viewPatri();
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on', b.dataset.v===VIEW));
-  const ttl = {home:'Aquest mes', mesos:'Els meus mesos', estad:'Estadístiques'}[VIEW];
-  const sub = {home:'El teu mes, clar', mesos:'Compara com han anat', estad:'On se\'n va tot'}[VIEW];
+  document.getElementById('fab').classList.toggle('hide', VIEW==='patri');   // al patrimoni no s'apunten despeses
+  const ttl = {home:'Aquest mes', mesos:'Els meus mesos', estad:'Estadístiques', patri:'Patrimoni'}[VIEW];
+  const sub = {home:'El teu mes, clar', mesos:'Compara com han anat',
+               estad:'On se\'n va tot', patri:'Tot el que tens'}[VIEW];
   document.getElementById('ttl').innerHTML = esc(ttl)+'<span class="sub">'+esc(sub)+'</span>';
   bindView();
 }
@@ -885,7 +958,121 @@ function viewEstad(){
   return h;
 }
 
-function donut(rows, tot){
+/* ---------- 3.4 Patrimoni ---------- */
+function viewPatri(){
+  const A = STATE.actius;
+  if(!A.length){
+    return '<div class="card empty" style="margin-top:16px"><span class="e">💎</span>'
+         + '<b>Encara no hi ha res</b>Afegeix-hi el que tens: el compte del banc, els diners '
+         + 'de Trade Republic, les accions, les criptos… i sabràs de què disposes de debò.'
+         + '<button class="btn" id="patNou" style="max-width:280px;margin:18px auto 0">Afegir el primer</button></div>';
+  }
+
+  const total = patrimoniAra();
+  const serie = seriePatrimoni(12);
+
+  // variació respecte de fa un mes
+  const faUnMes = patrimoniEn(finalDeMes(shiftYm(ymNow(),-1)));
+  const dif = total - faUnMes;
+  const pct = faUnMes ? Math.round(dif/faUnMes*1000)/10 : 0;
+
+  let h = '<div class="hero">'
+    + '<div class="lbl">El teu capital</div>'
+    + '<div class="big num">'+esc(eur(total))+'</div>';
+  if(faUnMes){
+    h += '<div class="note" style="margin-top:8px">'
+       + (dif>=0 ? '📈 <b style="color:var(--in)">+'+esc(eur(dif))+'</b>'
+                 : '📉 <b style="color:var(--out)">−'+esc(eur(Math.abs(dif)))+'</b>')
+       + ' respecte del mes passat ('+(dif>=0?'+':'−')+Math.abs(pct)+'%)</div>';
+  }
+  h += '</div>';
+
+  // evolució
+  const valors = serie.map(s=>s.total);
+  if(valors.some(v=>v>0)){
+    h += '<div class="sec-t">Com ha evolucionat</div><div class="card">'+lineChart(serie)+'</div>';
+  }
+
+  // repartiment per tipus
+  const perTipus = {};
+  for(const a of A) perTipus[a.tipus] = (perTipus[a.tipus]||0) + valorAra(a);
+  const rows = Object.entries(perTipus).filter(([,v])=>v>0)
+      .map(([t,v])=>({c:{n:tipusOf(t).n, e:tipusOf(t).e, col:tipusOf(t).col}, v}))
+      .sort((a,b)=>b.v-a.v);
+  if(rows.length>1 && total>0){
+    h += '<div class="sec-t">En què el tens</div><div class="card">'
+       + donut(rows, total, 'CAPITAL') + '<div class="legend">'
+       + rows.map(r=>'<div class="lg"><span class="sw" style="background:'+esc(r.c.col)+'"></span>'
+         + '<span class="n">'+r.c.e+' '+esc(r.c.n)+'</span>'
+         + '<span class="p num">'+Math.round(r.v/total*100)+'%</span>'
+         + '<span class="v num">'+esc(eur(r.v))+'</span></div>').join('')
+       + '</div></div>';
+  }
+
+  // llista d'actius
+  h += '<div class="sec-t">Què tens</div><div class="card" style="padding:6px 12px">';
+  for(const a of [...A].sort((x,y)=>valorAra(y)-valorAra(x))){
+    const t = tipusOf(a.tipus);
+    const quan = dataAra(a);
+    const vell = quan && quan < shiftDays(todayISO(), -45);
+    h += '<button class="cfg-row" data-actiu="'+esc(a.id)+'">'
+       +   '<span class="ci" style="background:'+esc(t.col)+'22">'+t.e+'</span>'
+       +   '<span class="cn">'+esc(a.nom)
+       +     '<span style="display:block;font-weight:500;font-size:12px;color:var(--muted)">'
+       +     (a.auto ? '🏦 del banc, automàtic'
+                     : (quan ? 'anotat el '+esc(dataCurta(quan)) + (vell?' · fa temps':'') : 'sense valor'))
+       +     '</span></span>'
+       +   '<span class="cv num" style="font-weight:700;color:var(--ink)">'+esc(eur(valorAra(a)))+'</span>'
+       + '</button>';
+  }
+  h += '</div>';
+
+  h += '<button class="btn" id="patActual">Actualitzar els valors</button>'
+     + '<button class="btn ghost" id="patNou">Afegir un actiu</button>'
+     + '<div style="height:20px"></div>';
+  return h;
+}
+
+function shiftDays(iso, n){
+  const d = new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
+}
+function dataCurta(iso){
+  const [y,m,d] = iso.split('-');
+  return +d+' '+MESOS[+m-1].slice(0,3)+(y!==String(new Date().getFullYear())?' '+y:'');
+}
+
+/** Gràfic de línia de l'evolució del patrimoni. */
+function lineChart(serie){
+  const W=320, H=120, P=6;
+  const vals = serie.map(s=>s.total);
+  const max = Math.max(...vals), min = Math.min(...vals.filter(v=>v>0), max);
+  const rang = (max-min) || max || 1;
+  const x = i => P + i*(W-2*P)/Math.max(1,serie.length-1);
+  const y = v => H-P - ((v-min)/rang)*(H-2*P-14);
+
+  let punts='', area='';
+  serie.forEach((s,i)=>{ punts += (i?' ':'')+x(i).toFixed(1)+','+y(s.total).toFixed(1); });
+  area = 'M'+x(0).toFixed(1)+','+(H-P)+' L'+punts.split(' ').join(' L')+' L'+x(serie.length-1).toFixed(1)+','+(H-P)+' Z';
+
+  const ultim = serie[serie.length-1];
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img" '
+    + 'aria-label="Evolució del patrimoni">'
+    + '<defs><linearGradient id="gPat" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0%" stop-color="var(--brand)" stop-opacity=".28"/>'
+    + '<stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>'
+    + '<path d="'+area+'" fill="url(#gPat)"/>'
+    + '<polyline points="'+punts+'" fill="none" stroke="var(--brand)" stroke-width="2.5" '
+    + 'stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<circle cx="'+x(serie.length-1).toFixed(1)+'" cy="'+y(ultim.total).toFixed(1)+'" r="4" fill="var(--brand)"/>'
+    + serie.map((s,i)=> i%3===0 || i===serie.length-1
+        ? '<text x="'+x(i).toFixed(1)+'" y="'+(H-1)+'" font-size="8" fill="var(--muted)" '
+          + 'text-anchor="'+(i===0?'start':(i===serie.length-1?'end':'middle'))+'">'
+          + esc(ymLabel(s.ym,true).split(' ')[0])+'</text>' : '').join('')
+    + '</svg>';
+}
+
+function donut(rows, tot, etiqueta){
   const R=68, SW=26, C=2*Math.PI*R, size=180;
   let off=0, segs='';
   for(const r of rows){
@@ -897,7 +1084,7 @@ function donut(rows, tot){
   return '<svg class="donut" width="'+size+'" height="'+size+'" viewBox="0 0 180 180" role="img" aria-label="Despeses per categoria">'
     + '<circle cx="90" cy="90" r="'+R+'" fill="none" stroke="var(--line)" stroke-width="'+SW+'"/>'
     + segs
-    + '<text x="90" y="85" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">GASTAT</text>'
+    + '<text x="90" y="85" text-anchor="middle" font-size="11" font-weight="700" fill="var(--muted)">'+esc(etiqueta||'GASTAT')+'</text>'
     + '<text x="90" y="107" text-anchor="middle" font-size="20" font-weight="800" fill="var(--ink)">'+esc(eur(tot))+'</text>'
     + '</svg>';
 }
@@ -1224,6 +1411,86 @@ function recForm(){
   return h;
 }
 
+/* ---------- 4.6b Patrimoni ---------- */
+let ADRAFT = null;
+function sheetActiu(actiu){
+  const nou = !actiu;
+  ADRAFT = actiu ? {...actiu, hist:[...actiu.hist]}
+                 : {id:uid('a'), nom:'', tipus:'borsa', auto:false, hist:[]};
+  openSheet(actiuForm(), sh=>{ if(nou) setTimeout(()=>sh.querySelector('#aNom').focus(), 320); });
+}
+function actiuForm(){
+  const a = ADRAFT, nou = !STATE.actius.some(x=>x.id===a.id);
+  let h = '<div class="sheet-hd"><h2>'+(nou?'Nou actiu':'Editar actiu')+'</h2>'
+        + '<button class="icon-btn" id="xClose">✕</button></div>';
+
+  if(a.auto){
+    h += '<div class="banner"><span>🏦</span><span><b>El valor l\'omple el banc</b>'
+       + 'Aquest saldo s\'actualitza sol cada matí. Només en pots canviar el nom.</span></div>';
+  }
+
+  h += '<label class="f">Com se\'n diu</label>'
+     + '<input class="fld" id="aNom" value="'+esc(a.nom)+'" placeholder="Ex.: Trade Republic, accions">';
+
+  h += '<label class="f">Quina mena de cosa és</label><div class="chips" id="aTipus">'
+     + TIPUS.map(t=>'<button class="chip'+(t.id===a.tipus?' on':'')+'" data-at="'+t.id+'">'
+       + t.e+' '+esc(t.n)+'</button>').join('') + '</div>';
+
+  if(!a.auto){
+    h += '<label class="f">Quant hi tens ara</label>'
+       + '<div class="amt-wrap"><input class="amt-in num" id="aVal" inputmode="decimal" '
+       + 'placeholder="0,00" value="'+(valorAra(a)? String(valorAra(a)).replace('.',','):'')+'"></div>'
+       + '<div style="text-align:center;color:var(--muted);font-size:13px;font-weight:600">'+esc(STATE.settings.cur)+'</div>';
+  }
+
+  // històric anotat
+  if(a.hist.length>1){
+    h += '<div class="sec-t">El que has anat anotant</div><div class="card">';
+    [...a.hist].reverse().slice(0,10).forEach((x,i,arr)=>{
+      const ant = arr[i+1];
+      const d = ant ? x.v-ant.v : 0;
+      h += '<div class="stat-row"><span>'+esc(dataCurta(x.d))+'</span>'
+         + '<b class="num">'+esc(eur(x.v))
+         + (ant ? ' <span style="font-weight:600;font-size:12.5px;color:'+(d>=0?'var(--in)':'var(--out)')+'">'
+                  + (d>=0?'+':'−')+esc(eur(Math.abs(d)))+'</span>' : '')
+         + '</b></div>';
+    });
+    h += '</div>';
+  }
+
+  h += '<button class="btn" id="aSave">Desar</button>';
+  if(!nou) h += '<button class="btn danger" id="aDel">Esborrar aquest actiu</button>';
+  return h;
+}
+
+/** Actualització ràpida: tots els valors en una sola pantalla, un cop al mes. */
+function sheetActualitzar(){
+  const man = STATE.actius.filter(a=>!a.auto);
+  let h = '<div class="sheet-hd"><h2>Actualitzar valors</h2><button class="icon-btn" id="xClose">✕</button></div>';
+  if(!man.length){
+    h += '<div class="empty" style="padding:26px 10px"><span class="e">🏦</span>'
+       + 'Tots els teus actius s\'actualitzen sols. No has de fer res.</div>'
+       + '<button class="btn ghost" id="xClose2">Tancar</button>';
+    return openSheet(h);
+  }
+  h += '<div style="font-size:13.5px;color:var(--muted);margin-bottom:6px">'
+     + 'Obre cada compte, mira el total i escriu-lo aquí. Es guarda la data, així podràs '
+     + 'veure com evoluciona.</div>';
+  h += '<div class="card">';
+  for(const a of man){
+    const t = tipusOf(a.tipus);
+    h += '<div class="cfg-row"><span class="ci" style="background:'+esc(t.col)+'22">'+t.e+'</span>'
+       + '<span class="cn">'+esc(a.nom)
+       + '<span style="display:block;font-weight:500;font-size:12px;color:var(--muted)">'
+       + (dataAra(a) ? 'ara: '+esc(eur(valorAra(a))) : 'sense valor')+'</span></span>'
+       + '<input class="fld num" style="width:112px;text-align:right;padding:9px 10px" '
+       + 'inputmode="decimal" data-upd="'+esc(a.id)+'" placeholder="'+(valorAra(a)||'0')+'"></div>';
+  }
+  h += '</div><button class="btn" id="updSave">Desar-ho tot</button>'
+     + '<button class="btn ghost" id="xClose2">Ara no</button>';
+  openSheet(h);
+}
+
 /* ---------- 4.7 Cerca ---------- */
 function sheetCerca(){
   let h = '<div class="sheet-hd"><h2>Cercar</h2><button class="icon-btn" id="xClose">✕</button></div>';
@@ -1461,6 +1728,54 @@ document.addEventListener('click', e=>{
     STATE.recur = STATE.recur.filter(r=>r.id!==RDRAFT.id);
     api.recDelete(RDRAFT.id);
     render(); sheetRecur(); toast('Esborrat');
+    return;
+  }
+
+  // --- patrimoni ---
+  if(e.target.closest('#patNou')){ sheetActiu(null); return; }
+  if(e.target.closest('#patActual')){ sheetActualitzar(); return; }
+  const ea = e.target.closest('[data-actiu]');
+  if(ea){ sheetActiu(STATE.actius.find(a=>a.id===ea.dataset.actiu)); return; }
+  const at = e.target.closest('#aTipus .chip');
+  if(at){
+    ADRAFT.tipus = at.dataset.at;
+    sh.querySelectorAll('#aTipus .chip').forEach(c=>c.classList.toggle('on', c===at));
+    return;
+  }
+  if(e.target.closest('#aSave')){
+    ADRAFT.nom = sh.querySelector('#aNom').value.trim();
+    if(!ADRAFT.nom){ toast('Posa-li un nom'); return; }
+    if(!ADRAFT.auto){
+      const v = parseFloat((sh.querySelector('#aVal').value||'').replace(/\s/g,'').replace(',','.'));
+      if(v>=0 && !isNaN(v) && v!==valorAra(ADRAFT)) anotaValor(ADRAFT, v);
+      else if(!ADRAFT.hist.length && v>=0 && !isNaN(v)) anotaValor(ADRAFT, v);
+    }
+    const i = STATE.actius.findIndex(a=>a.id===ADRAFT.id);
+    if(i>=0) STATE.actius[i] = {...ADRAFT}; else STATE.actius.push({...ADRAFT});
+    api.actiuUpsert({...ADRAFT});
+    closeSheet(); render(); toast('Desat');
+    return;
+  }
+  if(e.target.closest('#aDel')){
+    if(!confirm('Esborrar «'+ADRAFT.nom+'»? Es perdrà tot el seu històric.')) return;
+    STATE.actius = STATE.actius.filter(a=>a.id!==ADRAFT.id);
+    api.actiuDelete(ADRAFT.id);
+    closeSheet(); render(); toast('Esborrat');
+    return;
+  }
+  if(e.target.closest('#updSave')){
+    let n = 0;
+    sh.querySelectorAll('[data-upd]').forEach(inp=>{
+      const raw = (inp.value||'').replace(/\s/g,'').replace(',','.');
+      if(raw==='') return;
+      const v = parseFloat(raw);
+      if(isNaN(v) || v<0) return;
+      const a = STATE.actius.find(x=>x.id===inp.dataset.upd);
+      if(!a) return;
+      anotaValor(a, v); api.actiuUpsert({...a}); n++;
+    });
+    closeSheet(); render();
+    toast(n ? n+' valor'+(n>1?'s':'')+' actualitzat'+(n>1?'s':'') : 'No has canviat res');
     return;
   }
 
