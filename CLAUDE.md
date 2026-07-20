@@ -189,6 +189,18 @@ Separació de responsabilitats:
 - `_ebDesc(b)` → el que **es MOSTRA** (mana el nom del comerç: s'entén millor)
 - `_ebTextMatch(b)` → el que es fa servir per **CLASSIFICAR** (tot junt)
 
+**Dues coses apreses amb dades reals de CaixaBank/imagin (juliol 2026):**
+1. **El banc RETALLA els noms a uns 17 caràcters**: `ATLANTIDA RESTAUR`,
+   `MINIMERCAT BON PR`, `NYX*COFFEETECHNIC`. Les regles han de treballar amb
+   **trossos de paraula**, mai amb noms sencers.
+2. **L'ordre de `REGLES` és funcional, no estètic** (guanya la primera que
+   coincideix). Hi ha un bloc de **regles molt específiques just després de
+   Bizum** per als casos on una genèrica s'equivocaria. El cas real:
+   `EESS SUPECO VIC D` és una **benzinera** dins d'un Supeco — si la regla dels
+   supermercats anés abans, hi cauria pel «SUPECO». No moguis aquest bloc.
+   També: la regla deia `BONPREU` tot junt i el banc escriu `BON PREU, S.A.U.`
+   → no enganxava mai. Compte amb els espais.
+
 Eines de manteniment: `resumImportacio()` (comptadors, no ensenya dades),
 `elsQueNoSap()` (els conceptes que no ha sabut classificar, per ampliar
 `REGLES`) i `recategoritzaTot()` (torna a passar les regles pels que ja hi ha;
