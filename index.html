@@ -994,6 +994,10 @@ function sheetCfg(){
   h += '<div class="sec-t">Dades</div><div class="card">'
      + '<button class="cfg-row" id="cfgExport"><span class="ci">⬇️</span><span class="cn">Exportar-ho tot (CSV)</span><span class="cv">›</span></button>'
      + '<button class="cfg-row" id="cfgBackup"><span class="ci">💾</span><span class="cn">Còpia de seguretat (JSON)</span><span class="cv">›</span></button>'
+     + (LOCAL_ONLY ? '' :
+        '<button class="cfg-row" id="cfgOblida"><span class="ci">🔒</span>'
+      + '<span class="cn">Oblidar el PIN en aquest aparell<span style="display:block;font-weight:500;font-size:12.5px;color:var(--muted)">'
+      + 'Per si l\'has fet servir en un ordinador que no és teu</span></span><span class="cv">›</span></button>')
      + '</div>';
 
   h += '<div class="card" style="margin-top:12px;font-size:12.5px;color:var(--muted)">'
@@ -1424,6 +1428,11 @@ document.addEventListener('click', e=>{
   if(e.target.closest('#cfgRecur')){ sheetRecur(); return; }
   if(e.target.closest('#cfgExport')){ exportCSV(); return; }
   if(e.target.closest('#cfgBackup')){ exportJSON(); return; }
+  if(e.target.closest('#cfgOblida')){
+    if(!confirm('Treure el PIN d\'aquest aparell? L\'hauràs de tornar a escriure per entrar-hi.')) return;
+    clearPin(); closeSheet(); mostraPin('PIN tret d\'aquest aparell.');
+    return;
+  }
 });
 
 function readRecForm(sh){
