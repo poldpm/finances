@@ -125,20 +125,44 @@ l'històric amb totals i mitjana mensual), `sheetCfg`, `sheetBank`.
 
 ## 7. Connexió bancària PSD2 (Fase 2)
 Viu **sencera al backend** (`Codi_AppsScript.gs`, §4 del fitxer). Proveïdor:
-**GoCardless Bank Account Data** (accés PSD2 gratuït, regulat).
+**Enable Banking** (`https://api.enablebanking.com`), nivell gratuït
+«Restricted Production» per als comptes propis de l'usuari.
 
-- Les claus (`GC_SECRET_ID`, `GC_SECRET_KEY`) van a **Propietats de l'script**,
-  MAI al codi ni a cap fitxer del disc.
-- Flux d'alta, un sol cop: `bancsDisponibles()` → omplir `MEU_BANC` →
-  `connectarBanc()` (dona un enllaç on l'usuari s'identifica **al seu banc**) →
-  `acabarConnexio()` → `crearTriggerSync()`.
-- `sincronitzarBanc()` corre cada dia a les 6:00, importa els moviments nous
-  (`booked` i `pending`), dedupa per `bankId`, endevina el mètode de pagament
-  (`endevinaMetode`) i la categoria (`categoritzar` + array `REGLES`).
-- **El permís caduca** (`access_valid_for_days: 180`). `estatConnexio()` ho
-  comprova; quan caduqui cal repetir `connectarBanc()` + `acabarConnexio()`.
+> ❌ **GoCardless Bank Account Data (Nordigen) ja no serveix.** Està tancat a
+> altes noves i en procés de tancament (comprovat el juliol de 2026). Si algú
+> hi entra, l'únic camí obert és el producte de *cobrament* per domiciliació,
+> amb comissió per transacció, que no té res a veure. No hi tornis.
+
+- **Autenticació:** JWT **RS256** signat amb la clau privada de l'aplicació.
+  Header `{typ:'JWT', alg:'RS256', kid:<app id>}`, cos
+  `{iss:'enablebanking.com', aud:'api.enablebanking.com', iat, exp}`, màxim 24 h.
+  A Apps Script se signa amb `Utilities.computeRsaSha256Signature()` i es
+  codifica amb `Utilities.base64EncodeWebSafe()` sense els `=` finals
+  (`_b64url`). El JWT es cacheja 55 min a `CacheService`.
+- Les propietats (`EB_APP_ID`, `EB_PRIVATE_KEY`, `EB_REDIRECT`) van a
+  **Propietats de l'script**, MAI al codi ni a cap fitxer del disc.
+- **`redirect_url` = la URL del propi Web App.** `doGet(e)` detecta el
+  `?code=…` del retorn i crida `ebCrearSessio(code)` → així la connexió es tanca
+  sola sense haver de copiar cap codi a mà.
+- Flux d'alta, un sol cop: `provaConnexio()` → `bancsDisponibles()` → omplir
+  `MEU_BANC` amb el **nom exacte** → `connectarBanc()` (l'usuari s'identifica
+  **al seu banc**) → `crearTriggerSync()`.
+- `sincronitzarBanc()` corre cada dia a les 6:00. Primera passada 90 dies
+  enrere, després només 10. Pagina amb `continuation_key` (límit de 20 voltes).
+  Dedupa per `bankId` (`entry_reference` → `transaction_id` → composada).
+- **Mapatge de camps** (Enable Banking segueix Berlin Group):
+  `credit_debit_indicator` `'CRDT'`=ingrés / `'DBIT'`=despesa ·
+  `transaction_amount.amount` és un **string positiu** · `status!=='BOOK'` →
+  `pend:true` · descripció des de `remittance_information` (**array**), i si no
+  `creditor.name`/`debtor.name` (funció `_ebDesc`).
+- **El permís caduca** (`DIES_ACCES = 90`). `estatConnexio()` ho comprova; quan
+  caduqui cal repetir `connectarBanc()`.
 - **Mai demanem ni guardem credencials del banc.** L'usuari s'autentica a la web
   del seu banc i el permís concedit és de **només lectura**.
+- ⚠️ **No provat contra un banc real.** El codi segueix la documentació oficial,
+  però fins que no hi hagi una alta real no es pot garantir que CaixaBank
+  ompli els camps tal com s'espera. El primer dia caldrà mirar el registre
+  d'execució i ajustar `_ebDesc`, `endevinaMetode` i `REGLES`.
 
 ⚠️ **Límit conegut i important:** una PWA **no pot llegir la barra de
 notificacions d'Android** — no existeix cap API web que ho permeti. La
@@ -176,7 +200,8 @@ arriben sols. Si es fa el ruc, obre amb `?v=N`.
 
 ## 10. Pendent / idees ja parlades
 - **Fase 2:** activar la connexió PSD2 (falta que en Pol es doni d'alta a
-  GoCardless i posi les dues claus a les propietats de l'script). Tot el codi hi és.
+  **Enable Banking**, generi la clau i ompli les tres propietats de l'script).
+  Tot el codi hi és; el primer dia caldrà ajustar les regles amb dades reals.
 - **Importar un CSV/Excel del banc** per omplir l'històric d'abans de l'app.
 - **Etiquetes** transversals (ex.: «viatge a Roma») que travessin categories.
 - **Gràfic d'evolució per categoria** (com ha crescut «Restaurants» en 6 mesos).

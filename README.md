@@ -48,25 +48,41 @@ d'inici*. Ja la tens com una app, amb icona i tot. Funciona sense connexió.
 ### 4. (Opcional) Connectar el banc
 
 Amb això els pagaments amb targeta, les compres per internet, els rebuts i la
-nòmina s'apunten **sols** cada nit.
+nòmina s'apunten **sols** cada nit. Es fa amb **Enable Banking**, que té un
+nivell gratuït per llegir els teus propis comptes.
 
-1. Dona't d'alta (gratis) a
-   [bankaccountdata.gocardless.com](https://bankaccountdata.gocardless.com) →
-   *Developers → User secrets*.
-2. A l'Apps Script: *Configuració del projecte → Propietats de l'script* → crea
-   `GC_SECRET_ID` i `GC_SECRET_KEY` amb les dues claus.
-3. Executa, per ordre, aquestes funcions de l'editor d'Apps Script:
-   `bancsDisponibles()` → copia l'id del teu banc a la variable `MEU_BANC` →
-   `connectarBanc()` → obre l'enllaç que et dona i **identifica't al teu banc** →
-   `acabarConnexio()` → `crearTriggerSync()`.
+> ⚠️ **No facis servir GoCardless.** El seu producte gratuït de lectura de
+> comptes (l'antic Nordigen) està tancat a altes noves. Si hi entres, l'únic
+> que t'ofereix és el producte de *cobrar* als teus clients, que té comissions
+> per transacció i **no serveix per a això**.
+
+1. **Crea el compte i la clau.** A [enablebanking.com](https://enablebanking.com)
+   → *Control Panel* → registra una aplicació. Hi has de pujar un certificat
+   autosignat; et quedaràs una **clau privada (.pem)** i ells et donaran un
+   **Application ID**.
+2. **Registra la URL de tornada.** A la mateixa aplicació, posa com a *redirect
+   URL* la **URL del teu Web App d'Apps Script** (la del pas 2 d'aquesta guia).
+3. **Guarda-ho a l'Apps Script.** *Configuració del projecte → Propietats de
+   l'script* → crea:
+   - `EB_APP_ID` → l'Application ID
+   - `EB_PRIVATE_KEY` → tot el contingut del `.pem`, amb les línies `BEGIN`/`END`
+   - `EB_REDIRECT` → la mateixa URL del pas anterior
+4. **Executa aquestes funcions per ordre** des de l'editor d'Apps Script:
+   - `provaConnexio()` → ha de dir el nom de la teva aplicació. Si peta aquí, és
+     que alguna de les tres propietats està malament.
+   - `bancsDisponibles()` → copia el nom **exacte** del teu banc a la variable
+     `MEU_BANC` de dalt del fitxer.
+   - `connectarBanc()` → et dona un enllaç. **Obre'l i identifica't al teu banc.**
+     En tornar, la connexió ja queda feta sola i s'importen 90 dies de moviments.
+   - `crearTriggerSync()` → un sol cop, i ja s'actualitza cada nit a les 6:00.
 
 **Sobre la seguretat:** les teves claus del banc no passen mai per l'app ni per
 aquest codi. T'identifiques directament a la web del teu banc i el permís que
 dones és de **només lectura** — ningú no pot moure ni un cèntim. El pots revocar
 quan vulguis des del teu banc.
 
-**Cada 6 mesos** el permís caduca i cal repetir `connectarBanc()` +
-`acabarConnexio()`. Amb `estatConnexio()` ho pots comprovar.
+**Cada 90 dies** el permís caduca i cal tornar a executar `connectarBanc()` i
+identificar-se un altre cop. Amb `estatConnexio()` veus com va i quan toca.
 
 ---
 

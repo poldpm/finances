@@ -969,13 +969,22 @@ function sheetBank(){
      + 'L\'app es connecta amb el teu banc a través de <b>PSD2</b>, el sistema oficial europeu de banca oberta. '
      + 'T\'identifiques <b>tu mateix a la web del teu banc</b>: ni jo ni l\'app veiem mai les teves claus. '
      + 'El permís és de <b>només lectura</b> i el pots revocar quan vulguis.</span></div>';
-  h += '<div class="card" style="margin-top:12px;font-size:14px;line-height:1.55">'
-     + '<b>Què passarà quan estigui actiu</b><br>Cada nit l\'app llegirà els moviments nous del compte i els apuntarà sols: '
-     + 'pagaments amb targeta (mòbil i física), compres per internet, rebuts i la nòmina. '
-     + 'Tu només hauràs de revisar-ne la categoria si no l\'encerta.<br><br>'
-     + '<b style="color:var(--warn)">⚠️ Encara no està engegat.</b> Falta un pas que has de fer tu: donar-te d\'alta '
-     + '(gratis) al proveïdor de banca oberta i enganxar les dues claus a l\'Apps Script. '
-     + 'Quan vulguis, ho fem plegats i queda llest en 10 minuts.</div>';
+  if(STATE.bank.connected){
+    h += '<div class="card" style="margin-top:12px;font-size:14px;line-height:1.55">'
+       + '<b>✅ Connectat</b> a '+esc(STATE.bank.institution||'el teu banc')+'.<br>'
+       + 'Els moviments nous entren cada nit i te\'ls trobaràs a «Per revisar».'
+       + (STATE.bank.caduca ? '<br><br>El permís caduca el <b>'+esc(STATE.bank.caduca)+'</b>. '
+                            + 'Quan arribi el dia, cal tornar a identificar-se al banc.' : '')
+       + '</div>';
+  } else {
+    h += '<div class="card" style="margin-top:12px;font-size:14px;line-height:1.55">'
+       + '<b>Què passarà quan estigui actiu</b><br>Cada nit l\'app llegirà els moviments nous del compte i els apuntarà sols: '
+       + 'pagaments amb targeta (mòbil i física), compres per internet, rebuts i la nòmina. '
+       + 'Els trobaràs a <b>«Per revisar»</b>, i si algun ja l\'havies apuntat tu, l\'app t\'ho dirà.<br><br>'
+       + '<b style="color:var(--warn)">⚠️ Encara no està engegat.</b> Es configura una sola vegada des de '
+       + 'l\'Apps Script, amb <b>Enable Banking</b>. Cal donar-se d\'alta, crear una clau i executar-hi '
+       + 'quatre funcions. Ho tens explicat pas a pas al README del projecte.</div>';
+  }
   h += '<button class="btn ghost" id="xClose2">Entesos</button>';
   openSheet(h);
 }
