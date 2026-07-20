@@ -1,0 +1,15 @@
+# El backend NO va mai a GitHub: viu a l'editor d'Apps Script.
+Codi_AppsScript.gs
+
+# Preferències locals de Claude Code
+.claude/settings.local.json
+
+# Còpies de seguretat i exportacions
+*.bak
+finances_backup_*.json
+finances_*.csv
+
+# Brossa del sistema
+Thumbs.db
+desktop.ini
+.DS_Store
