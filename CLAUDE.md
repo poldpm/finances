@@ -168,6 +168,31 @@ Viu **sencera al backend** (`Codi_AppsScript.gs`, §4 del fitxer). Proveïdor:
 - `sincronitzarBanc()` corre cada dia a les 6:00. Primera passada 90 dies
   enrere, després només 10. Pagina amb `continuation_key` (límit de 20 voltes).
   Dedupa per `bankId` (`entry_reference` → `transaction_id` → composada).
+
+### Classificació (§5 del backend) — llegir abans de tocar-hi
+Ordre de decisió, del més fiable al menys:
+1. **Traspassos** (Trade Republic i altres comptes propis) i **Bizum**: manen
+   sobre tota la resta, siguin quins siguin els altres senyals.
+2. **`merchant_category_code` (MCC)** — el codi ISO 18245 del tipus de negoci.
+   És el senyal **més fiable** per a compres amb targeta: no depèn de com
+   s'escrigui el nom del comerç. Taula al mapa `MCC`.
+3. **Paraules clau** (`REGLES`), la primera que coincideix guanya.
+
+⚠️ **L'error que va tenir la primera versió i que no s'ha de repetir:** es
+classificava **només amb `remittance_information`**. Els bancs hi posen sovint
+un text genèric (`COMPRA TARJETA 000123`) i deixen el nom del comerç a
+**`creditor.name`**. Resultat: mig Mercadona i mig restaurant anaven a «Altres».
+Ara `_ebTextMatch(b)` **ajunta tots els camps** (nom, concepte, codi del banc,
+informació addicional) i és això el que es fa servir per classificar.
+Separació de responsabilitats:
+- `_ebNom(b)` → qui cobra/paga · `_ebConcepte(b)` → el text lliure
+- `_ebDesc(b)` → el que **es MOSTRA** (mana el nom del comerç: s'entén millor)
+- `_ebTextMatch(b)` → el que es fa servir per **CLASSIFICAR** (tot junt)
+
+Eines de manteniment: `resumImportacio()` (comptadors, no ensenya dades),
+`elsQueNoSap()` (els conceptes que no ha sabut classificar, per ampliar
+`REGLES`) i `recategoritzaTot()` (torna a passar les regles pels que ja hi ha;
+només amb el text desat, perquè l'MCC no el guardem al moviment).
 - **Mapatge de camps** (Enable Banking segueix Berlin Group):
   `credit_debit_indicator` `'CRDT'`=ingrés / `'DBIT'`=despesa ·
   `transaction_amount.amount` és un **string positiu** · `status!=='BOOK'` →
