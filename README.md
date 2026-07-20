@@ -34,7 +34,18 @@ dispositiu. Quan connectis el Google Sheets (pas 2), les tindràs a tot arreu.
    - Qui hi té accés: **qualsevol persona**
    - Copia la **URL** que et dona.
 4. Obre `index.html`, busca `WEB_APP_URL: ''` a dalt de tot i enganxa-hi la URL.
-5. Torna a pujar `index.html` a GitHub.
+5. **Posa-hi un PIN** (important, llegeix-ho): a l'Apps Script, *Configuració del
+   projecte → Propietats de l'script* → crea la propietat **`PIN`** amb el número
+   que vulguis (mínim 4 xifres).
+
+   > **Per què cal.** L'adreça del backend viu dins l'`index.html`, que és
+   > públic. Sense PIN, qualsevol que la trobi podria llegir i modificar les
+   > teves finances. Amb el PIN, no. **El PIN no és enlloc del codi**: només a
+   > les propietats de l'script i al dispositiu on l'escrius.
+   >
+   > Si no crees la propietat, el backend queda **obert**. Serveix per fer
+   > proves, però no ho deixis així.
+6. Torna a pujar `index.html` a GitHub.
 
 > El punt de color de dalt a la dreta et diu com va: **gris** = només aquest
 > dispositiu · **verd** = tot desat al núvol · **taronja** = hi ha coses per
@@ -44,6 +55,9 @@ dispositiu. Quan connectis el Google Sheets (pas 2), les tindràs a tot arreu.
 
 Obre l'adreça amb el Chrome del mòbil → menú **⋮** → *Afegir a la pantalla
 d'inici*. Ja la tens com una app, amb icona i tot. Funciona sense connexió.
+
+El primer cop que l'obris a cada aparell et demanarà el **PIN**. Un sol cop:
+després queda desat en aquell dispositiu.
 
 ### 4. (Opcional) Connectar el banc
 

@@ -226,6 +226,34 @@ textarea.fld{resize:vertical;min-height:60px}
 .switch.on{background:var(--brand)}
 .switch i{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .switch.on i{left:22px}
+
+/* ============ 9. PANTALLA DE PIN ============ */
+.lock{
+  position:fixed;inset:0;z-index:300;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:24px calc(24px + env(safe-area-inset-left,0px)) calc(24px + var(--safe-b));
+}
+.lock .mark{width:62px;height:62px;border-radius:19px;background:var(--brand);display:grid;place-items:center;margin-bottom:18px}
+.lock .mark svg{width:34px;height:34px}
+.lock h2{font-size:21px;margin-bottom:6px}
+.lock p{color:var(--muted);font-size:14px;text-align:center;margin:0 0 24px;max-width:280px}
+.lock .err{color:var(--out);font-weight:650}
+.dots{display:flex;gap:13px;margin-bottom:30px;min-height:15px}
+.dots i{width:14px;height:14px;border-radius:50%;background:var(--line);transition:.15s}
+.dots i.on{background:var(--brand);transform:scale(1.12)}
+.lock.shake{animation:shake .4s}
+@keyframes shake{
+  0%,100%{transform:translateX(0)} 20%{transform:translateX(-9px)}
+  40%{transform:translateX(9px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)}
+}
+.pad{display:grid;grid-template-columns:repeat(3,74px);gap:14px}
+.pad button{
+  height:64px;border-radius:20px;background:var(--card);box-shadow:var(--sh);
+  font-size:25px;font-weight:600;display:grid;place-items:center;
+}
+.pad button:active{transform:scale(.93);background:var(--brand-soft)}
+.pad button.alt{background:transparent;box-shadow:none;font-size:19px;color:var(--muted)}
+.lock .busy{color:var(--muted);font-size:14px;margin-top:22px;min-height:20px}
 </style>
 </head>
 <body>
@@ -261,9 +289,9 @@ textarea.fld{resize:vertical;min-height:60px}
    ===================================================================== */
 const CONFIG = {
   WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbyFfksRy1eE56WRei5I2Gs08ZPlw3eqKUIIlqLZOpiBLCQqY8ux8eG7rG9hFFwy9S9D/exec',
-  SECRET: '',
   STORE_KEY: 'finances_v1',
   PEND_KEY: 'finances_pending_v1',
+  PIN_KEY: 'finances_pin_v1',
 };
 const LOCAL_ONLY = !CONFIG.WEB_APP_URL;
 
@@ -397,7 +425,15 @@ function setDot(cls){
   d.className = 'dot-sync'+(cls?' '+cls:'');
 }
 
-async function request(action, payload){
+/* El PIN es desa en aquest dispositiu. Mai viatja dins el codi font. */
+let PIN = '';
+function loadPin(){ try{ PIN = localStorage.getItem(CONFIG.PIN_KEY) || ''; }catch(e){ PIN=''; } }
+function savePin(p){ PIN = p; try{ localStorage.setItem(CONFIG.PIN_KEY, p); }catch(e){} }
+function clearPin(){ PIN = ''; try{ localStorage.removeItem(CONFIG.PIN_KEY); }catch(e){} }
+
+class PinError extends Error {}
+
+async function request(action, payload, pin){
   if(LOCAL_ONLY) return {ok:true, local:true};
   const ctrl = new AbortController();
   const to = setTimeout(()=>ctrl.abort(), 15000);
@@ -405,9 +441,10 @@ async function request(action, payload){
     const r = await fetch(CONFIG.WEB_APP_URL, {
       method:'POST', signal:ctrl.signal,
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({action, payload, secret:CONFIG.SECRET})
+      body: JSON.stringify({action, payload, secret: pin!==undefined ? pin : PIN})
     });
     const j = await r.json();
+    if(j && j.error==='pin') throw new PinError('pin');
     if(!j || j.ok===false) throw new Error(j && j.error || 'error');
     return j;
   } finally { clearTimeout(to); }
@@ -424,7 +461,7 @@ function persist(action, payload){
 
 let _flushing = false;
 async function flushPending(){
-  if(_flushing || LOCAL_ONLY || !PENDING.length) return;
+  if(_flushing || LOCAL_ONLY || !PENDING.length || !PIN) return;
   _flushing = true;
   try{
     while(PENDING.length){
@@ -433,12 +470,16 @@ async function flushPending(){
       PENDING.shift(); savePending();
     }
     setDot('ok');
-  }catch(e){ setDot('bad'); }
+  }catch(e){
+    setDot('bad');
+    // el PIN ha deixat de ser vàlid: torna a demanar-lo, però NO perdis la cua
+    if(e instanceof PinError){ clearPin(); mostraPin('El PIN ja no és vàlid.'); }
+  }
   finally{ _flushing = false; }
 }
 
 async function pull(){
-  if(LOCAL_ONLY) return;
+  if(LOCAL_ONLY || !PIN) return;
   try{
     await flushPending();
     if(PENDING.length) return;                  // no trepitgis canvis locals no enviats
@@ -451,7 +492,10 @@ async function pull(){
       saveLocal(); render();
     }
     setDot('ok');
-  }catch(e){ setDot('bad'); }
+  }catch(e){
+    setDot('bad');
+    if(e instanceof PinError){ clearPin(); mostraPin('El PIN ja no és vàlid.'); }
+  }
 }
 
 /* API d'accions */
@@ -1426,6 +1470,102 @@ document.addEventListener('scroll', ()=>{
 }, {passive:true});
 
 /* =====================================================================
+   5b. PANTALLA DE PIN
+   ---------------------------------------------------------------------
+   El PIN no és al codi: el comprova el backend contra una propietat de
+   l'script. Aquí només es desa al dispositiu un cop encertat.
+   ===================================================================== */
+let PIN_BUF = '';
+const PIN_MIN = 4;
+
+function mostraPin(missatge){
+  if(document.getElementById('lock')) return;      // ja hi és
+  const el = document.createElement('div');
+  el.className = 'lock'; el.id = 'lock';
+  el.innerHTML =
+      '<div class="mark"><svg viewBox="0 0 64 64" aria-hidden="true">'
+    +   '<rect x="14" y="34" width="9" height="17" rx="4.5" fill="#8FE0C6"/>'
+    +   '<rect x="27.5" y="24" width="9" height="27" rx="4.5" fill="#CFF3E5"/>'
+    +   '<rect x="41" y="14" width="9" height="37" rx="4.5" fill="#FFFFFF"/></svg></div>'
+    + '<h2>Finances</h2>'
+    + '<p id="lockMsg" class="'+(missatge?'err':'')+'">'
+    +   (missatge || 'Escriu el teu PIN per obrir les teves dades.')+'</p>'
+    + '<div class="dots" id="lockDots"></div>'
+    + '<div class="pad">'
+    +   [1,2,3,4,5,6,7,8,9].map(n=>'<button data-k="'+n+'">'+n+'</button>').join('')
+    +   '<button class="alt" data-k="del">esborra</button>'
+    +   '<button data-k="0">0</button>'
+    +   '<button class="alt" data-k="ok">entra</button>'
+    + '</div>'
+    + '<div class="busy" id="lockBusy"></div>';
+  document.body.appendChild(el);
+  document.body.style.overflow = 'hidden';
+  PIN_BUF = '';
+  pintaPunts();
+}
+
+function amagaPin(){
+  const el = document.getElementById('lock');
+  if(el) el.remove();
+  document.body.style.overflow = '';
+}
+
+function pintaPunts(){
+  const d = document.getElementById('lockDots');
+  if(!d) return;
+  d.innerHTML = Array.from({length: Math.max(PIN_MIN, PIN_BUF.length)},
+    (_,i)=>'<i class="'+(i<PIN_BUF.length?'on':'')+'"></i>').join('');
+}
+
+async function provaPin(){
+  const p = PIN_BUF;
+  if(p.length < PIN_MIN) return;
+  const busy = document.getElementById('lockBusy');
+  const msg  = document.getElementById('lockMsg');
+  busy.textContent = 'Comprovant…';
+  try{
+    const j = await request('getState', {}, p);    // el verifiquem contra el servidor
+    savePin(p);
+    if(j.state){
+      STATE = normalize(j.state);
+      _lastSig = JSON.stringify(j.state);
+      generarRecurrents();
+      saveLocal();
+    }
+    amagaPin(); render(); setDot('ok');
+    flushPending();
+  }catch(e){
+    PIN_BUF = ''; pintaPunts();
+    const lock = document.getElementById('lock');
+    lock.classList.remove('shake'); void lock.offsetWidth; lock.classList.add('shake');
+    if(e instanceof PinError){
+      msg.textContent = 'Aquest PIN no és correcte.'; msg.className = 'err';
+    } else {
+      msg.textContent = 'No hi ha manera d\'arribar al servidor. Mira la connexió.';
+      msg.className = 'err';
+    }
+    busy.textContent = '';
+  }
+}
+
+document.addEventListener('click', e=>{
+  const k = e.target.closest('#lock .pad button');
+  if(!k) return;
+  const v = k.dataset.k;
+  if(v==='del'){ PIN_BUF = PIN_BUF.slice(0,-1); pintaPunts(); return; }
+  if(v==='ok'){ provaPin(); return; }
+  if(PIN_BUF.length < 12){ PIN_BUF += v; pintaPunts(); }
+});
+
+// també des del teclat físic (a l'ordinador)
+document.addEventListener('keydown', e=>{
+  if(!document.getElementById('lock')) return;
+  if(/^[0-9]$/.test(e.key)){ if(PIN_BUF.length<12){ PIN_BUF += e.key; pintaPunts(); } }
+  else if(e.key==='Backspace'){ PIN_BUF = PIN_BUF.slice(0,-1); pintaPunts(); }
+  else if(e.key==='Enter'){ provaPin(); }
+});
+
+/* =====================================================================
    6. EXPORTACIÓ
    ===================================================================== */
 function download(name, text, mime){
@@ -1453,6 +1593,7 @@ function exportJSON(){
    ===================================================================== */
 (function boot(){
   loadPending();
+  loadPin();
   STATE = normalize(loadLocal() || emptyState());
   history.pushState({},'');
   const nousRec = generarRecurrents();
@@ -1460,6 +1601,7 @@ function exportJSON(){
   if(nousRec) toast(nousRec+' moviment'+(nousRec>1?'s':'')+' mensual'+(nousRec>1?'s':'')+' apuntat'+(nousRec>1?'s':''));
   setDot(LOCAL_ONLY ? '' : 'ok');
   if(!LOCAL_ONLY){
+    if(!PIN){ mostraPin(); }                    // primer cop en aquest dispositiu
     pull();
     setInterval(()=>{ if(document.visibilityState==='visible' && VIEW==='home') pull(); }, 30000);
     window.addEventListener('online', flushPending);

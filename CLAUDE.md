@@ -25,8 +25,26 @@ Idèntica al projecte *Coordinació 2n* (mateix patró provat):
 Config al principi de `index.html` (objecte `CONFIG`):
 - `WEB_APP_URL` → URL del desplegament d'Apps Script. **Si és buit, `LOCAL_ONLY`
   = cert** i l'app funciona només amb localStorage (útil per provar).
-- `SECRET` → secret compartit; buit = sense.
-- `STORE_KEY = 'finances_v1'`, `PEND_KEY = 'finances_pending_v1'`.
+- `STORE_KEY = 'finances_v1'`, `PEND_KEY = 'finances_pending_v1'`,
+  `PIN_KEY = 'finances_pin_v1'`.
+
+## 2b. PIN (per què hi és)
+El repositori és **públic**, o sigui que la `WEB_APP_URL` és visible per a
+qualsevol. Sense cap comprovació, qui la trobés podria **llegir i escriure**
+totes les finances. Per això:
+- El backend compara el que envia l'app amb la propietat de l'script **`PIN`**.
+  Si la propietat **no existeix, el backend queda obert** (només per provar).
+- **El PIN no és MAI al codi ni a cap fitxer del repositori.** L'usuari
+  l'escriu un cop per dispositiu i es desa a `localStorage`, i des d'aleshores
+  viatja al camp `secret` de cada petició.
+- `mostraPin()` pinta la pantalla de bloqueig (teclat propi, també funciona amb
+  el teclat físic). `provaPin()` el valida **contra el servidor** amb un
+  `getState` abans de desar-lo — així no es desa mai un PIN dolent.
+- Si el servidor respon `{error:'pin'}` (`PinError`), `pull()` i `flushPending()`
+  esborren el PIN i tornen a demanar-lo. ⚠️ **La cua `PENDING` no es toca**:
+  els canvis pendents es reenvien quan torni a entrar.
+- `flushPending()` i `pull()` no fan res si no hi ha PIN, per no cremar
+  peticions mentre la pantalla de bloqueig és a la vista.
 
 ## 3. Fitxers del repositori
 ```
