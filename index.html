@@ -987,6 +987,20 @@ function viewPatri(){
   }
   h += '</div>';
 
+  // avís si fa temps que no toques els valors manuals
+  const vells = A.filter(a=>!a.auto && (!dataAra(a) || dataAra(a) < shiftDays(todayISO(), -30)));
+  if(vells.length){
+    h += '<button class="card" id="patActual" style="width:100%;text-align:left;display:flex;'
+       + 'align-items:center;gap:12px;margin-top:14px;background:var(--warn-soft)">'
+       +   '<span style="font-size:22px">⏰</span>'
+       +   '<span style="flex:1"><b style="display:block;color:var(--warn)">'
+       +   (vells.length===1 ? 'Fa més d\'un mes que no actualitzes «'+esc(vells[0].nom)+'»'
+                            : vells.length+' valors fa més d\'un mes que no els toques')+'</b>'
+       +   '<span style="font-size:12.5px;color:var(--warn);opacity:.85">'
+       +   'Mentre no ho facis, el gràfic no diu la veritat.</span></span>'
+       +   '<span style="color:var(--warn);font-weight:700">›</span></button>';
+  }
+
   // evolució
   const valors = serie.map(s=>s.total);
   if(valors.some(v=>v>0)){
